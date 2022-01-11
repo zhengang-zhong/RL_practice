@@ -10,8 +10,9 @@ import torch.optim as optim
 
 learning_rate = 0.0005
 LOAD_PERIOD = 20
-MAX_EPISODE = 50
-# MAX_EPISODE = 10000
+TRAINING_EPISODE = 2000
+# MAX_EPISODE = 50
+MAX_EPISODE = 10000
 MAX_BUFFER_LEN = 50000
 EPSILON = 0.01
 BATCH_SIZE = 32
@@ -81,8 +82,6 @@ def categorical(state_tensor, input_tensor, reward, Q_func):
 class C51:
     def __init__(self):
         self.rb = Replay_Buffer()
-
-
         # print(N_state, N_input)
         self.q = Q_func(N_STATE, N_INPUT, N_ATOM)
         self.q_target = Q_func(N_STATE, N_INPUT, N_ATOM)
@@ -185,7 +184,7 @@ class C51:
 
 
     def data_generation(self):
-        for i in range(MAX_EPISODE):
+        for i in range(TRAINING_EPISODE):
             epsilon = EPSILON  # possibly decreasing
             # epsilon = max(0.01, 0.08 - 0.01 * (n_episode / 200))  # Linear annealing from 8% to 1%
             state = env.reset()
@@ -204,24 +203,33 @@ class C51:
 
                 if done:
                     break
-            len_rb = self.rb.len()
+            # len_rb = self.rb.len()
 
 if __name__ == '__main__':
     C51 = C51()
     C51.data_generation()
-    C51.learn()
+    print_interval = 20
+    score = 0.0
+    for n_episode in range(MAX_EPISODE):
+        epsilon = max(0.01, 0.08 - 0.01 * (n_episode / 200))
+        state = env.reset()
+        done = False
 
+        while not done:
+            action = C51.sample_action(torch.from_numpy(state).float(), epsilon)
+            state_n, reward, done, _ = env.step(action)
+            # done_mask = 0.0 if done else 1.0
+            experience = (state, action, reward / 100.0, state_n, 1 - done) # 1 - done to flip the value of true and false. For mini batch learning
+            C51.rb.push(experience)
+            state = state_n
+            
+            score += reward
+            if done:
+                break
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+        C51.learn()
+        
+        if n_episode % print_interval == 0 and n_episode != 0:
+            C51.q_target.load_state_dict(C51.q.state_dict())
+            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
+                n_episode, score / print_interval, C51.rb.len(), epsilon * 100))
