@@ -60,62 +60,67 @@ if __name__ == '__main__':
     q_target = DQN() # Target action NN
     q_target.load_state_dict(q.state_dict()) # Initialized with the same parameters
     optimizer = optim.Adam(q.parameters(), lr=learning_rate) # Try RMSprop
-
+    score = 0.0
     for n_episode in range(MAX_EPISODE):
-        epsilon = EPSILON # possibly decreasing
+        # epsilon = EPSILON # possibly decreasing
         epsilon = max(0.01, 0.08 - 0.01 * (n_episode / 200))  # Linear annealing from 8% to 1%
         state = env.reset()
         done = False
 
-        score = 0.0
+        print_interval = 20
+
         while not done:
             action = q.sample_action(torch.from_numpy(state).float(), epsilon)
             state_n, reward, done, _ = env.step(action)
-            score += reward
-            experience = (state, action, reward, state_n, 1 - done) # 1 - done to flip the value of true and false. For mini batch learning
-
+            # done_mask = 0.0 if done else 1.0
+            experience = (state, action, reward / 100.0, state_n, 1 - done) # 1 - done to flip the value of true and false. For mini batch learning
             rb.push(experience)
             state = state_n
 
-
+            score += reward
             if done:
                 break
         len_rb = rb.len()
-        if len_rb >= BATCH_SIZE:
-        # if len_rb >= 2000:
+        # if len_rb >= BATCH_SIZE:
+        if len_rb > 2000:
             # start to optimize NN
-
             # sample a mini batch from the reply buffer
-            mini_batch = rb.sample()
-            state_list, action_list, reward_list, state_n_list, done_list = [], [], [], [], []
-            for experience in mini_batch:
-                state_temp, action_temp, reward_temp, state_n_temp, done_temp = experience
-                state_list += [state_temp]
-                action_list += [[action_temp]]
-                reward_list += [[reward_temp]]
-                state_n_list += [state_n_temp]
-                done_list += [[done_temp]]
+            for i in range(10):
+                mini_batch = rb.sample()
+                state_list, action_list, reward_list, state_n_list, done_list = [], [], [], [], []
+                for experience in mini_batch:
+                    state_temp, action_temp, reward_temp, state_n_temp, done_temp = experience
+                    state_list += [state_temp]
+                    action_list += [[action_temp]]
+                    reward_list += [[reward_temp]]
+                    state_n_list += [state_n_temp]
+                    done_list += [[done_temp]]
 
-            state_tensor = torch.tensor(state_list, dtype=torch.float)
-            action_tensor = torch.tensor(action_list)
-            reward_tensor = torch.tensor(reward_list)
-            state_n_tensor = torch.tensor(state_n_list, dtype=torch.float)
-            done_tensor = torch.tensor(done_list, dtype=torch.float)
+                state_tensor = torch.tensor(state_list, dtype=torch.float)
+                action_tensor = torch.tensor(action_list)
+                reward_tensor = torch.tensor(reward_list)
+                state_n_tensor = torch.tensor(state_n_list, dtype=torch.float)
+                done_tensor = torch.tensor(done_list, dtype=torch.float)
+                # print(state_tensor.shape)
+                q_out = q(state_tensor)
+                q_a = q_out.gather(1, action_tensor)  # gather the value of corresponding action
+                # print(q_a)
 
-            q_out = q(state_tensor)
-            q_a = q_out.gather(1, action_tensor)  # gather the value of corresponding action
-            # print(q_a)
+                # print(q_target(state_n_tensor).max(1)) # q_target(state_n_tensor).max(1) to get maximum and the correponding index
+                # print(q_target(state_n_tensor).max(1)[0].unsqueeze(1)) # unsqueeze along certain axis
+                max_q_prime = q_target(state_n_tensor).max(1)[0].unsqueeze(1)
+                # print("max_q_prime", max_q_prime, "done", done_tensor)
+                target = reward_tensor + gamma * max_q_prime * done_tensor
+                loss = F.smooth_l1_loss(q_a, target)
 
-            # print(q_target(state_n_tensor).max(1)) # q_target(state_n_tensor).max(1) to get maximum and the correponding index
-            # print(q_target(state_n_tensor).max(1)[0].unsqueeze(1)) # unsqueeze along certain axis
-            max_q_prime = q_target(state_n_tensor).max(1)[0].unsqueeze(1)
-            target = reward_tensor + gamma * max_q_prime * done_tensor
-            loss = F.smooth_l1_loss(q_a, target)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        if n_episode % LOAD_PERIOD == 0 and n_episode != 0:
+        if n_episode % print_interval == 0 and n_episode != 0:
             q_target.load_state_dict(q.state_dict())
-        print(score)
+            print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
+                n_episode, score / print_interval, rb.len(), epsilon * 100))
+            score = 0.0
+        # print(score)
     env.close()
