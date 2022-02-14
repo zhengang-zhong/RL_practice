@@ -67,18 +67,6 @@ class Q_func(nn.Module):
         return x
 
 
-
-def categorical(state_tensor, input_tensor, reward, Q_func):
-    N_input = Q_func.N_input
-    N_state = Q_func.N_state
-    N_atom = Q_func.N_atom
-
-    q_out = Q_func(state_tensor)
-
-    Q_list = []
-    # for i in range(N_input):
-
-
 class C51:
     def __init__(self):
         self.rb = Replay_Buffer()
@@ -132,7 +120,7 @@ class C51:
         p_out = self.q(state_tensor) #(N_batch, N_ATOM, N_INPUT)
         p_eval = torch.stack([p_out[i].index_select(1,action_tensor[i]) for i in range(BATCH_SIZE)]).squeeze(2) #(N_bacth, N_ATOM)
         # print("p_eval",p_eval.shape)
-        p_out_n = self.q(state_n_tensor) #(N_batch, N_ATOM, N_INPUT)
+        p_out_n = self.q_target(state_n_tensor) #(N_batch, N_ATOM, N_INPUT)
         # print(q_out)
 
         # print(self.Z_range_ts.view(-1, 1).shape)
@@ -171,7 +159,7 @@ class C51:
                    m_torch[i, l_int[i,j]] += p_out_max_n[i,j]
                 else:
                     m_torch[i,l_int[i,j]] +=  (p_out_max_n * (u - b))[i,j]
-                    m_torch[i,l_int[i,j]] +=  (p_out_max_n * (b - l))[i,j]
+                    m_torch[i,u_int[i,j]] +=  (p_out_max_n * (b - l))[i,j]
         #m_torch shape: (N_batch, N_ATOM)
         # print(torch.sum(m_torch,dim=1))
         loss = - m_torch * torch.log(p_eval) #(N_batch, N_ATOM)
@@ -195,7 +183,7 @@ class C51:
                 # print(action)
                 state_n, reward, done, _ = env.step(action)
                 # score += reward
-                experience = (state, action, reward, state_n,
+                experience = (state, action, reward/100.0, state_n,
                               1 - done)  # 1 - done to flip the value of true and false. For mini batch learning
 
                 self.rb.push(experience)
@@ -233,3 +221,4 @@ if __name__ == '__main__':
             C51.q_target.load_state_dict(C51.q.state_dict())
             print("n_episode :{}, score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
                 n_episode, score / print_interval, C51.rb.len(), epsilon * 100))
+            score = 0.0
