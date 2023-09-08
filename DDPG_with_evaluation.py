@@ -136,7 +136,7 @@ class DDPG():
 
         Ns = env.observation_space.shape[0]
         Na = env.action_space.shape[0]
-        a_max = env.action_space.high.item()
+        a_max = torch.tensor(env.action_space.high, dtype=torch.float32)
 
         self.Ns = Ns
         self.Na = Na
@@ -163,7 +163,7 @@ class DDPG():
         actor = self.actor
         # score = 0.0
         for j in range(N_size):
-            action = actor(torch.from_numpy(state))
+            action = actor(torch.tensor(state, dtype=torch.float32))
             next_state, reward, done, _, _ = env.step(action.detach())
             # score += reward
 
@@ -191,7 +191,7 @@ class DDPG():
             score = 0.0
             for j in range(T):
 
-                action = actor(torch.from_numpy(state)) + torch.normal(0, 0.001, size=(Na,))
+                action = actor(torch.tensor(state, dtype=torch.float32)) + torch.normal(0, 0.001, size=(Na,))
                 next_state, reward, done, _, _ = env.step(action.detach())
                 score += reward
 
@@ -201,11 +201,11 @@ class DDPG():
 
 
                 state_rb, action_rb, reward_rb, next_state_rb, done_rb = replay_buffer.sample(batch_size)
-                state_tensor = torch.tensor(state_rb, dtype=torch.float)
-                action_tensor = torch.tensor(action_rb)
-                reward_tensor = torch.tensor(reward_rb)
-                next_state_tensor = torch.tensor(next_state_rb, dtype=torch.float)
-                done_tensor = torch.tensor(done_rb, dtype=torch.float)
+                state_tensor = torch.tensor(state_rb, dtype=torch.float32)
+                action_tensor = torch.tensor(action_rb, dtype=torch.float32)
+                reward_tensor = torch.tensor(reward_rb, dtype=torch.float32)
+                next_state_tensor = torch.tensor(next_state_rb, dtype=torch.float32)
+                done_tensor = torch.tensor(done_rb, dtype=torch.float32)
 
                 y = reward_tensor + gamma * critic_target(next_state_tensor, action_tensor).view(-1)
                 L = loss(y, critic(state_tensor, action_tensor).view(-1))
@@ -246,7 +246,7 @@ class DDPG():
 if __name__ == '__main__':
     # env = gym.make('BipedalWalker-v3')
     parameter = dict()
-    parameter["lr"] = 5e-4
+    parameter["lr"] = 1e-3
     env = gym.make('Pendulum-v1')
     ddpg = DDPG(env, parameter)
     batch_size = 64
@@ -259,5 +259,5 @@ if __name__ == '__main__':
 
 
 
-    ddpg.train(rb, T, episode = N_episode, batch_size=batch_size, gamma=0.99, tau=0.001)
+    ddpg.train(rb, T, episode = N_episode, batch_size=batch_size, gamma=0.99, tau=0.003)
 
